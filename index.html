@@ -206,7 +206,8 @@ textarea { min-height: 120px; font-family: ui-monospace, "SF Mono", Menlo, Conso
         <button class="btn" id="m-next" type="button" aria-label="Next pay month">&rsaquo;</button>
       </div>
       <div class="row">
-        <label class="f" for="m-end">This pay month ends on day<select id="m-end"></select></label>
+        <label class="f" for="m-end">This pay month ends on<input type="date" id="m-end"></label>
+        <button class="btn sm" id="m-reset" type="button">Use usual end day</button>
       </div>
       <p class="help" id="m-endnote"></p>
       <div class="tablewrap"><table><thead><tr><th>Date</th><th>In</th><th>Out</th><th class="n">Hours</th><th></th></tr></thead><tbody id="sheet-body"></tbody></table></div>
@@ -223,7 +224,7 @@ textarea { min-height: 120px; font-family: ui-monospace, "SF Mono", Menlo, Conso
   <section class="view" id="view-more" hidden>
     <div class="panel">
       <h2>Jobs</h2>
-      <p class="help">Each job has its own hourly rate and its own pay month. A pay month is named after the month it ends in. For example, if a job's pay month usually ends on the 27th, October runs from 28 Sep to 27 Oct. When one month ends on a different day, change just that month in the Timesheet tab.</p>
+      <p class="help">Each job has its own hourly rate and its own pay month. Pick the day each pay month usually ends. For example, if it usually ends on the 27th, October runs from 28 Sep to 27 Oct. Choose "Last day of the month" for normal calendar months. When one month ends on a different date, even a date in the next month, change just that month in the Timesheet tab.</p>
       <div id="jobs-list" style="display:flex;flex-direction:column;gap:12px"></div>
       <div class="row"><button class="btn primary" id="job-add" type="button">Add a job</button>
         <label class="f" for="cur" style="flex:0 1 120px">Currency<select id="cur"><option>£</option><option>$</option><option>€</option><option>GH₵</option><option>₦</option></select></label></div>
@@ -321,8 +322,13 @@ textarea { min-height: 120px; font-family: ui-monospace, "SF Mono", Menlo, Conso
         var e = Math.round(Number(j.endDay)); if (!(e >= 1 && e <= 31)) e = 31;
         var ends = {};
         if (j.ends && typeof j.ends === 'object') Object.keys(j.ends).forEach(function (k) {
-          var v = Math.round(Number(j.ends[k]));
-          if (/^\d{4}-\d{2}$/.test(k) && v >= 1 && v <= 31) ends[k] = v;
+          if (!/^\d{4}-\d{2}$/.test(k)) return;
+          var v = j.ends[k];
+          if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ends[k] = v;
+          else { // older saves kept just a day number inside that month
+            var n = Math.round(Number(v));
+            if (n >= 1 && n <= 31) ends[k] = k + '-' + pad(Math.min(n, dim(+k.slice(0, 4), +k.slice(5, 7))));
+          }
         });
         return { id: String(j.id), name: String(j.name), rate: Math.max(0, Number(j.rate) || 0), endDay: e, ends: ends, color: ((Number(j.color) || 0) % COLORS + COLORS) % COLORS };
       });
@@ -378,23 +384,30 @@ textarea { min-height: 120px; font-family: ui-monospace, "SF Mono", Menlo, Conso
   function dim(y, m) { return new Date(y, m, 0).getDate(); }   // m is 1-12
 
   /* ---------- pay months ---------- */
-  // The day a pay month ends: a day picked for that one month, otherwise the job's usual day.
-  function endDayOf(j, y, m) {
-    var o = j.ends && j.ends[y + '-' + pad(m)];
-    return Math.min(o || j.endDay, dim(y, m));
+  // A pay month is named by the key 'YYYY-MM'. It ends on the date you set for it (any date,
+  // including days in the next calendar month), otherwise on the job's usual day in that month.
+  // It starts the day after the previous pay month ends.
+  function usualEnd(j, key) {
+    var y = +key.slice(0, 4), m = +key.slice(5, 7);
+    return key + '-' + pad(Math.min(j.endDay, dim(y, m)));
+  }
+  function endDateOf(j, key) {
+    var o = j.ends && j.ends[key];
+    return o || usualEnd(j, key);
   }
   function periodKeyOf(j, dateStr) {
-    var y = +dateStr.slice(0, 4), m = +dateStr.slice(5, 7), d = +dateStr.slice(8, 10);
-    if (d <= endDayOf(j, y, m)) return dateStr.slice(0, 7);
-    m += 1; if (m > 12) { m = 1; y += 1; }
-    return y + '-' + pad(m);
+    var m0 = dateStr.slice(0, 7);
+    for (var off = -3; off <= 3; off++) {
+      var k = shiftKey(m0, off);
+      if (dateStr <= endDateOf(j, k)) return k;
+    }
+    return shiftKey(m0, 3);
   }
   function periodRange(j, key) {
-    var y = +key.slice(0, 4), m = +key.slice(5, 7);
-    var end = new Date(y, m - 1, endDayOf(j, y, m), 12);
-    var py = y, pm = m - 1; if (pm < 1) { pm = 12; py -= 1; }
-    var start = new Date(py, pm - 1, endDayOf(j, py, pm) + 1, 12);
-    return { start: start, end: end };
+    var end = keyToDate(endDateOf(j, key));
+    var s = keyToDate(endDateOf(j, shiftKey(key, -1)));
+    s.setDate(s.getDate() + 1);
+    return { start: s, end: end };
   }
   function rangeText(j, key) {
     var r = periodRange(j, key);
@@ -529,18 +542,33 @@ textarea { min-height: 120px; font-family: ui-monospace, "SF Mono", Menlo, Conso
     $('grand').textContent = all.length ? 'Total for ' + j.name + ': ' + fmtHM(gt) + ' hours across ' + all.length + ' shifts' + (j.rate > 0 ? ', ' + money(gt, j.rate) : '') + '.' : '';
   }
   function fillEnd(j, key) {
-    var y = +key.slice(0, 4), m = +key.slice(5, 7), n = dim(y, m), custom = j.ends && j.ends[key];
-    var html = '<option value="">Usual day (' + Math.min(j.endDay, n) + ')</option>';
-    for (var d = 1; d <= n; d++) html += '<option value="' + d + '">' + d + '</option>';
-    $('m-end').innerHTML = html;
-    $('m-end').value = custom ? String(Math.min(custom, n)) : '';
-    $('m-endnote').textContent = custom ? 'Set by you for this month only. Other months keep the usual day.' : 'Change this if this month ran longer or shorter than usual. Shifts move to the right month on their own.';
+    var custom = j.ends && j.ends[key];
+    var start = dateKey(periodRange(j, key).start);
+    var nextEnd = keyToDate(endDateOf(j, shiftKey(key, 1))); nextEnd.setDate(nextEnd.getDate() - 1);
+    $('m-end').min = start; $('m-end').max = dateKey(nextEnd);
+    $('m-end').value = endDateOf(j, key);
+    $('m-reset').hidden = !custom;
+    $('m-endnote').textContent = custom
+      ? 'Set by you for this month only. It can end in the next calendar month. The next pay month starts the day after.'
+      : 'Pick a later date if this pay month runs into the next calendar month, or an earlier one if it ends sooner. Shifts move to the right month on their own.';
   }
   $('m-end').addEventListener('change', function () {
-    var j = job(state.sel), key = viewPeriod[j.id], v = +$('m-end').value;
+    var j = job(state.sel), key = viewPeriod[j.id], v = $('m-end').value, note = $('m-endnote');
+    if (!v) return;
+    if (v < $('m-end').min || v > $('m-end').max) {
+      note.textContent = 'Pick a date from ' + shortDay(keyToDate($('m-end').min)) + ' to ' + shortDay(keyToDate($('m-end').max)) + ' so this month stays before the next one.';
+      note.className = 'help err'; $('m-end').value = endDateOf(j, key); return;
+    }
+    note.className = 'help';
     if (!j.ends) j.ends = {};
-    if (v) j.ends[key] = v; else delete j.ends[key];
+    if (v === usualEnd(j, key)) delete j.ends[key]; else j.ends[key] = v;
     save(); renderAll(); toast('Pay month updated');
+  });
+  $('m-reset').addEventListener('click', function () {
+    var j = job(state.sel), key = viewPeriod[j.id];
+    if (j.ends) delete j.ends[key];
+    $('m-endnote').className = 'help';
+    save(); renderAll(); toast('Back to the usual end day');
   });
   $('m-prev').addEventListener('click', function () { var j = job(state.sel); viewPeriod[j.id] = shiftKey(viewPeriod[j.id], -1); renderSheet(); });
   $('m-next').addEventListener('click', function () { var j = job(state.sel); viewPeriod[j.id] = shiftKey(viewPeriod[j.id], 1); renderSheet(); });
