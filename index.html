@@ -12,6 +12,805 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap">
 <style>
+/* Layout: one narrow phone column. Pick a job, tap the big button. Timesheet and More are tabs. */
+:root {
+  --bg: #f1f3ef;
+  --surface: #ffffff;
+  --surface-2: #e7ebe4;
+  --fg: #1c2420;
+  --muted: #5d6b63;
+  --line: #d3dacf;
+  --accent: #2b7a4b;
+  --accent-fg: #ffffff;
+  --accent-soft: #d9ecdf;
+  --out: #b4501d;
+  --out-fg: #ffffff;
+  --out-soft: #f6e1d3;
+  --danger: #b3261e;
+  --scrim: rgba(20, 28, 24, 0.45);
+  --j0: #2b7a4b; --j1: #2f6fb3; --j2: #b4501d; --j3: #8a4fb3; --j4: #8f6f00; --j5: #c2415c;
+  --font-display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+/* Always light: this page keeps its light look whatever the phone's theme is. */
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.45;
+  padding-block: 16px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  font-variant-numeric: tabular-nums;
+}
+.app { max-width: 620px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.125rem; }
+h3 { font-size: 1rem; }
+.eyebrow { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+header .sub { color: var(--muted); font-size: 0.875rem; }
+
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface-2); border-radius: 12px; padding: 4px; gap: 4px; }
+.tabs button { border: 0; background: transparent; padding: 10px 8px; border-radius: 9px; font-weight: 600; color: var(--muted); min-height: 44px; }
+.tabs button[aria-selected="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.view[hidden] { display: none; }
+.view { display: flex; flex-direction: column; gap: 16px; }
+
+.banner { background: var(--out-soft); border: 1px solid var(--out); color: var(--fg); border-radius: 10px; padding: 10px 12px; font-size: 0.875rem; }
+
+/* job chips */
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 8px; border: 2px solid var(--line); background: var(--surface); border-radius: 999px; padding: 8px 14px; min-height: 44px; font-weight: 600; max-width: 100%; }
+.chip[aria-pressed="true"] { border-color: var(--jc, var(--accent)); background: var(--surface-2); }
+.chip:disabled { opacity: 0.55; cursor: not-allowed; }
+.chip .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--jc, var(--accent)); flex: none; display: inline-block; }
+
+/* clock */
+.now { text-align: center; display: flex; flex-direction: column; gap: 2px; }
+.now .time { font-family: var(--font-display); font-weight: 700; font-size: clamp(2.6rem, 14vw, 4rem); line-height: 1; letter-spacing: -0.02em; }
+.now .date { color: var(--muted); }
+.status { text-align: center; display: flex; flex-direction: column; gap: 2px; min-height: 3.2em; justify-content: center; }
+.status .elapsed { font-family: var(--font-display); font-size: 1.75rem; font-weight: 700; color: var(--out); }
+.punch { width: 100%; min-height: 72px; border-radius: 16px; border: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; background: var(--jc, var(--accent)); color: #fff; overflow-wrap: anywhere; }
+.punch.out { background: var(--out); color: var(--out-fg); }
+.punch:active { transform: scale(0.99); }
+.adjust { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 0.875rem; color: var(--muted); }
+
+.periods { display: flex; flex-direction: column; }
+.prow { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 14px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.prow:last-child { border-bottom: 0; }
+.prow .who { display: flex; flex-direction: column; min-width: 0; }
+.prow .who b { display: flex; align-items: center; gap: 8px; }
+.prow .who b span.t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow .who small { color: var(--muted); font-size: 0.8125rem; padding-left: 20px; }
+.prow .h, .prow .p { font-family: var(--font-display); font-weight: 700; text-align: right; }
+.prow.sum { font-weight: 700; }
+
+/* lists + table */
+.tablewrap { overflow-x: auto; margin-inline: -4px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; padding: 6px 6px; border-bottom: 2px solid var(--line); white-space: nowrap; }
+td { padding: 10px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th.n, td.n { text-align: right; }
+tr.total td { font-weight: 700; border-bottom: 0; background: var(--accent-soft); }
+tr.total td:first-child { border-radius: 8px 0 0 8px; }
+tr.total td:last-child { border-radius: 0 8px 8px 0; }
+td .edit { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 6px 10px; min-height: 36px; }
+td .overnight, td .jobname { font-size: 0.7rem; color: var(--muted); display: block; line-height: 1.1; margin-top: 2px; }
+td .jobname { display: flex; align-items: center; gap: 4px; }
+td .jobname .dot { width: 8px; height: 8px; }
+.empty { color: var(--muted); text-align: center; padding: 18px 8px; }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row.between { justify-content: space-between; }
+.monthnav { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; text-align: center; }
+.monthnav .mid { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 14px; min-height: 44px; font-weight: 600; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.danger { color: var(--danger); border-color: var(--danger); }
+.btn.danger.armed { background: var(--danger); color: #fff; }
+.btn.sm { min-height: 36px; padding: 6px 10px; font-size: 0.875rem; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.months { display: flex; flex-direction: column; }
+.months button { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 12px 4px; min-height: 44px; }
+.months button:last-child { border-bottom: 0; }
+.months small { color: var(--muted); display: block; }
+
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: 0.875rem; color: var(--muted); font-weight: 500; min-width: 0; flex: 1 1 140px; }
+input[type="text"], input[type="number"], input[type="date"], input[type="time"], select, textarea {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 44px; width: 100%; color: var(--fg);
+}
+textarea { min-height: 120px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.8125rem; line-height: 1.4; resize: vertical; white-space: pre; overflow-x: auto; }
+.help { color: var(--muted); font-size: 0.875rem; margin: 0; }
+.help.ok { color: var(--accent); }
+.help.err { color: var(--danger); }
+
+/* job cards */
+.jobcard { border: 1px solid var(--line); border-left: 6px solid var(--jc, var(--accent)); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.swatch { width: 36px; height: 36px; border-radius: 50%; border: 3px solid transparent; background: var(--jc); padding: 0; }
+.swatch[aria-pressed="true"] { border-color: var(--fg); }
+
+/* editor sheet */
+.scrim { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: flex-end; justify-content: center; z-index: 20;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.scrim[hidden] { display: none; }
+.sheet { background: var(--surface); width: 100%; max-width: 480px; border-radius: 16px 16px 0 0; padding: 18px 16px 20px; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--line); max-height: 100%; overflow-y: auto; }
+@media (min-width: 560px) { .scrim { align-items: center; } .sheet { border-radius: 16px; } }
+.preview { font-family: var(--font-display); font-weight: 700; font-size: 1.25rem; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: 0.875rem; z-index: 30; max-width: calc(100% - 32px); text-align: center; }
+.toast[hidden] { display: none; }
+@media (prefers-reduced-motion: no-preference) { .punch { transition: transform 0.08s; } }
+</style>
+
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <div class="eyebrow">Hours log</div>
+      <h1>Bakery Clock</h1>
+    </div>
+    <div class="sub" id="today-label"></div>
+  </header>
+
+  <div id="storage-warning" class="banner" hidden>This browser is not saving data. Copy a backup from the More tab before you close the page.</div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab-clock" aria-selected="true" data-view="clock">Clock</button>
+    <button role="tab" id="tab-sheet" aria-selected="false" data-view="sheet">Timesheet</button>
+    <button role="tab" id="tab-more" aria-selected="false" data-view="more">More</button>
+  </div>
+
+  <!-- CLOCK -->
+  <section class="view" id="view-clock">
+    <div class="panel">
+      <div class="now"><div class="time" id="live-time">--:--:--</div><div class="date" id="live-date"></div></div>
+      <div class="chips" id="clock-chips" role="group" aria-label="Job"></div>
+      <div class="status" id="status"></div>
+      <button class="punch" id="punch" type="button">Clock in</button>
+      <div class="adjust" id="adjust" hidden>
+        <label for="adj-time">Started earlier?</label>
+        <input type="time" id="adj-time" style="width:auto">
+        <button class="btn sm" id="adj-save" type="button">Set start time</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="row between"><h2>Current pay month</h2><span class="eyebrow">So far</span></div>
+      <div class="periods" id="periods"></div>
+      <p class="help" id="st-note"></p>
+    </div>
+    <div class="panel">
+      <div class="row between"><h2>Recent shifts</h2><button class="btn sm" id="recent-add" type="button">Add a shift</button></div>
+      <div class="tablewrap"><table><thead><tr><th>Date</th><th>In</th><th>Out</th><th class="n">Hours</th><th></th></tr></thead><tbody id="recent-body"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- TIMESHEET -->
+  <section class="view" id="view-sheet" hidden>
+    <div class="panel">
+      <div class="chips" id="sheet-chips" role="group" aria-label="Job"></div>
+      <div class="monthnav">
+        <button class="btn" id="m-prev" type="button" aria-label="Previous pay month">&lsaquo;</button>
+        <div class="mid"><h2 id="m-label"></h2><span class="help" id="m-range"></span></div>
+        <button class="btn" id="m-next" type="button" aria-label="Next pay month">&rsaquo;</button>
+      </div>
+      <div class="row">
+        <label class="f" for="m-end">This pay month ends on day<select id="m-end"></select></label>
+      </div>
+      <p class="help" id="m-endnote"></p>
+      <div class="tablewrap"><table><thead><tr><th>Date</th><th>In</th><th>Out</th><th class="n">Hours</th><th></th></tr></thead><tbody id="sheet-body"></tbody></table></div>
+      <div class="row between"><button class="btn primary" id="sheet-add" type="button">Add a shift</button><span class="help" id="sheet-pay"></span></div>
+    </div>
+    <div class="panel">
+      <h2 id="all-title">All pay months</h2>
+      <div class="months" id="months"></div>
+      <p class="help" id="grand"></p>
+    </div>
+  </section>
+
+  <!-- MORE -->
+  <section class="view" id="view-more" hidden>
+    <div class="panel">
+      <h2>Jobs</h2>
+      <p class="help">Each job has its own hourly rate and its own pay month. A pay month is named after the month it ends in. For example, if a job's pay month usually ends on the 27th, October runs from 28 Sep to 27 Oct. When one month ends on a different day, change just that month in the Timesheet tab.</p>
+      <div id="jobs-list" style="display:flex;flex-direction:column;gap:12px"></div>
+      <div class="row"><button class="btn primary" id="job-add" type="button">Add a job</button>
+        <label class="f" for="cur" style="flex:0 1 120px">Currency<select id="cur"><option>£</option><option>$</option><option>€</option><option>GH₵</option><option>₦</option></select></label></div>
+    </div>
+
+    <div class="panel">
+      <h2>Export timesheet</h2>
+      <div class="row">
+        <label class="f" for="x-job">Job<select id="x-job"></select></label>
+      </div>
+      <div class="row">
+        <label class="f" for="x-from">From<input type="date" id="x-from"></label>
+        <label class="f" for="x-to">To<input type="date" id="x-to"></label>
+      </div>
+      <div class="row">
+        <button class="btn sm" id="x-this" type="button">This pay month</button>
+        <button class="btn sm" id="x-last" type="button">Last pay month</button>
+        <button class="btn sm" id="x-all" type="button">All dates</button>
+      </div>
+      <textarea id="x-out" readonly aria-label="Timesheet CSV"></textarea>
+      <div class="row"><button class="btn primary" id="x-copy" type="button">Copy timesheet</button><span class="help" id="x-msg">Paste it into Excel or Google Sheets. Pay month and grand totals are included.</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>Add many shifts</h2>
+      <p class="help">Paste one shift per line, such as your old timesheet rows. Each line needs a date, an in time and an out time, for example <em>Friday, July 31, 2026 3:00 AM 6:00 PM</em> or <em>31/07/2026 03:00 18:00</em>. Dates with a slash are read day first. All lines go to the job you pick here.</p>
+      <label class="f" for="imp-job">Add to job<select id="imp-job"></select></label>
+      <textarea id="imp-in" aria-label="Shifts to import" placeholder="Friday, July 31, 2026 3:00 AM 6:00 PM"></textarea>
+      <div class="row"><button class="btn primary" id="imp-go" type="button">Add shifts</button><span class="help" id="imp-msg"></span></div>
+    </div>
+
+    <div class="panel">
+      <h2>Backup and restore</h2>
+      <p class="help">Your hours are saved in this browser on this phone. Copy a backup now and then, and paste it back here to restore it on another phone or after clearing site data. Older backups still work.</p>
+      <textarea id="bk-out" readonly aria-label="Backup text"></textarea>
+      <div class="row"><button class="btn" id="bk-copy" type="button">Copy backup</button><span class="help" id="bk-msg"></span></div>
+      <textarea id="bk-in" aria-label="Backup to restore" placeholder="Paste a backup here"></textarea>
+      <div class="row"><button class="btn danger" id="bk-restore" type="button">Restore backup</button><span class="help" id="bk-rmsg"></span></div>
+    </div>
+
+    <div class="panel">
+      <h2>Start over</h2>
+      <p class="help">Removes every shift and any running clock on this phone. Your jobs stay.</p>
+      <div class="row"><button class="btn danger" id="wipe" type="button">Delete all shifts</button><span class="help" id="wipe-msg"></span></div>
+    </div>
+  </section>
+</div>
+
+<!-- shift editor -->
+<div class="scrim" id="scrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ed-title">
+    <h2 id="ed-title">Edit shift</h2>
+    <label class="f" for="ed-job">Job<select id="ed-job"></select></label>
+    <div class="row">
+      <label class="f" for="ed-date">Date started<input type="date" id="ed-date"></label>
+    </div>
+    <div class="row">
+      <label class="f" for="ed-in">In<input type="time" id="ed-in"></label>
+      <label class="f" for="ed-out">Out<input type="time" id="ed-out"></label>
+    </div>
+    <div class="preview" id="ed-prev"></div>
+    <p class="help" id="ed-msg">If Out is earlier than In, the shift runs past midnight.</p>
+    <div class="row between">
+      <button class="btn danger" id="ed-del" type="button">Delete</button>
+      <div class="row"><button class="btn" id="ed-cancel" type="button">Cancel</button><button class="btn primary" id="ed-save" type="button">Save</button></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  var KEY = 'bakery-clock-v1';
+  var COLORS = 6;
+  var state = { v: 2, jobs: [], shifts: [], active: null, cur: '£', sel: null };
+  var storageOk = true;
+  var viewPeriod = {};      // jobId -> 'YYYY-MM'
+  var editingId = null;
+  var $ = function (id) { return document.getElementById(id); };
+  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+
+  /* ---------- data model + migration ---------- */
+  function newJob(name, rate, endDay, color) {
+    return { id: 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: name, rate: rate || 0, endDay: endDay || 31, color: color || 0 };
+  }
+  function validShift(s) {
+    return s && /^\d{4}-\d{2}-\d{2}$/.test(s.date) && /^\d{2}:\d{2}$/.test(s.in) && /^\d{2}:\d{2}$/.test(s.out);
+  }
+  function normalise(d) {
+    // accepts old single-job data (no jobs) or the current format
+    var out = { v: 2, jobs: [], shifts: [], active: null, cur: d.cur || '£', sel: d.sel || null };
+    if (Array.isArray(d.jobs) && d.jobs.length) {
+      out.jobs = d.jobs.filter(function (j) { return j && j.id && j.name != null; }).map(function (j) {
+        var e = Math.round(Number(j.endDay)); if (!(e >= 1 && e <= 31)) e = 31;
+        var ends = {};
+        if (j.ends && typeof j.ends === 'object') Object.keys(j.ends).forEach(function (k) {
+          var v = Math.round(Number(j.ends[k]));
+          if (/^\d{4}-\d{2}$/.test(k) && v >= 1 && v <= 31) ends[k] = v;
+        });
+        return { id: String(j.id), name: String(j.name), rate: Math.max(0, Number(j.rate) || 0), endDay: e, ends: ends, color: ((Number(j.color) || 0) % COLORS + COLORS) % COLORS };
+      });
+    }
+    if (!out.jobs.length) { var j0 = newJob('Bakery', Math.max(0, Number(d.rate) || 0), 31, 0); j0.id = 'j1'; out.jobs = [j0]; }
+    var first = out.jobs[0].id;
+    var ids = {}; out.jobs.forEach(function (j) { ids[j.id] = 1; });
+    out.shifts = (d.shifts || []).filter(validShift).map(function (s) {
+      return { id: s.id || uid(), job: ids[s.job] ? s.job : first, date: s.date, in: s.in, out: s.out };
+    });
+    if (d.active && typeof d.active.start === 'number') out.active = { start: d.active.start, job: ids[d.active.job] ? d.active.job : first };
+    if (!ids[out.sel]) out.sel = first;
+    return out;
+  }
+  function load() {
+    var d = null;
+    try { var raw = localStorage.getItem(KEY); if (raw) d = JSON.parse(raw); } catch (e) { storageOk = false; }
+    state = normalise(d && typeof d === 'object' ? d : {});
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); }
+    catch (e) { storageOk = false; $('storage-warning').hidden = false; }
+  }
+  function uid() { return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function job(id) { for (var i = 0; i < state.jobs.length; i++) if (state.jobs[i].id === id) return state.jobs[i]; return state.jobs[0]; }
+  function jc(j) { return 'var(--j' + j.color + ')'; }
+
+  /* ---------- time helpers ---------- */
+  function toMin(hhmm) { var p = hhmm.split(':'); return +p[0] * 60 + +p[1]; }
+  function dur(s) { return (toMin(s.out) - toMin(s.in) + 1440) % 1440; }
+  function overnight(s) { return toMin(s.out) < toMin(s.in); }
+  function fmtHM(m) { return Math.floor(m / 60) + ':' + pad(m % 60); }
+  function t12(hhmm) {
+    var h = +hhmm.slice(0, 2), m = hhmm.slice(3);
+    var ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    return h + ':' + m + ' ' + ap;
+  }
+  function dateKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function keyToDate(k) { var p = k.split('-'); return new Date(+p[0], +p[1] - 1, +(p[2] || 1), 12); }
+  function hhmm(d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function dayLabel(k) { return keyToDate(k).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); }
+  function dayLong(k) { return keyToDate(k).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); }
+  function monthLabel(mk) { return keyToDate(mk + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); }
+  function shortDay(d) { return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
+  function money(mins, rate) { return state.cur + (mins / 60 * rate).toFixed(2); }
+  function sorted(list) {
+    return list.slice().sort(function (a, b) {
+      return a.date < b.date ? -1 : a.date > b.date ? 1 : toMin(a.in) - toMin(b.in);
+    });
+  }
+  function sum(list) { return list.reduce(function (t, s) { return t + dur(s); }, 0); }
+  function dim(y, m) { return new Date(y, m, 0).getDate(); }   // m is 1-12
+
+  /* ---------- pay months ---------- */
+  // The day a pay month ends: a day picked for that one month, otherwise the job's usual day.
+  function endDayOf(j, y, m) {
+    var o = j.ends && j.ends[y + '-' + pad(m)];
+    return Math.min(o || j.endDay, dim(y, m));
+  }
+  function periodKeyOf(j, dateStr) {
+    var y = +dateStr.slice(0, 4), m = +dateStr.slice(5, 7), d = +dateStr.slice(8, 10);
+    if (d <= endDayOf(j, y, m)) return dateStr.slice(0, 7);
+    m += 1; if (m > 12) { m = 1; y += 1; }
+    return y + '-' + pad(m);
+  }
+  function periodRange(j, key) {
+    var y = +key.slice(0, 4), m = +key.slice(5, 7);
+    var end = new Date(y, m - 1, endDayOf(j, y, m), 12);
+    var py = y, pm = m - 1; if (pm < 1) { pm = 12; py -= 1; }
+    var start = new Date(py, pm - 1, endDayOf(j, py, pm) + 1, 12);
+    return { start: start, end: end };
+  }
+  function rangeText(j, key) {
+    var r = periodRange(j, key);
+    return shortDay(r.start) + ' to ' + shortDay(r.end);
+  }
+  function curKey(j) { return periodKeyOf(j, dateKey(new Date())); }
+  function shiftKey(key, delta) {
+    var y = +key.slice(0, 4), m = +key.slice(5, 7) + delta;
+    while (m > 12) { m -= 12; y += 1; }
+    while (m < 1) { m += 12; y -= 1; }
+    return y + '-' + pad(m);
+  }
+  function jobShifts(j) { return state.shifts.filter(function (s) { return s.job === j.id; }); }
+  function periodShifts(j, key) { return jobShifts(j).filter(function (s) { return periodKeyOf(j, s.date) === key; }); }
+
+  /* ---------- toast ---------- */
+  var toastTimer;
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, 2600);
+  }
+
+  /* ---------- job chips ---------- */
+  function chipsHTML(lock) {
+    return state.jobs.map(function (j) {
+      var on = j.id === state.sel;
+      return '<button type="button" class="chip" style="--jc:' + jc(j) + '" data-job="' + j.id + '" aria-pressed="' + on + '"' + (lock && !on ? ' disabled' : '') + '><span class="dot"></span><span class="nm">' + esc(j.name || 'Untitled') + '</span></button>';
+    }).join('');
+  }
+  function renderChips() {
+    $('clock-chips').innerHTML = chipsHTML(!!state.active);
+    $('sheet-chips').innerHTML = chipsHTML(false);
+  }
+  function onChip(e) {
+    var b = e.target.closest('[data-job]'); if (!b || b.disabled) return;
+    state.sel = b.getAttribute('data-job'); save(); renderAll();
+  }
+  $('clock-chips').addEventListener('click', onChip);
+  $('sheet-chips').addEventListener('click', onChip);
+
+  /* ---------- clock view ---------- */
+  function tickClock() {
+    var now = new Date();
+    $('live-time').textContent = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+    $('live-date').textContent = dayLong(dateKey(now));
+    $('today-label').textContent = now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    if (state.active) {
+      var secs = Math.max(0, Math.floor((now.getTime() - state.active.start) / 1000));
+      var el = document.getElementById('elapsed');
+      if (el) el.textContent = Math.floor(secs / 3600) + ':' + pad(Math.floor(secs / 60) % 60) + ':' + pad(secs % 60);
+    }
+  }
+  function renderClock() {
+    var st = $('status'), btn = $('punch');
+    var j = state.active ? job(state.active.job) : job(state.sel);
+    btn.style.setProperty('--jc', jc(j));
+    if (state.active) {
+      var s = new Date(state.active.start);
+      st.innerHTML = '<div class="eyebrow">' + esc(j.name) + ' since ' + t12(hhmm(s)) + (dateKey(s) !== dateKey(new Date()) ? ' on ' + dayLabel(dateKey(s)) : '') + '</div><div class="elapsed" id="elapsed">0:00:00</div>';
+      btn.textContent = 'Clock out'; btn.className = 'punch out';
+      $('adjust').hidden = false;
+      $('adj-time').value = hhmm(s);
+    } else {
+      st.innerHTML = '<div class="eyebrow">Not clocked in</div><div class="help">Pick the job, then tap the button when your shift starts.</div>';
+      btn.textContent = 'Clock in to ' + j.name; btn.className = 'punch';
+      $('adjust').hidden = true;
+    }
+    // current pay month for each job
+    var anyRate = false, totMin = 0, totPay = 0;
+    var rows = state.jobs.map(function (jb) {
+      var key = curKey(jb), list = periodShifts(jb, key), m = sum(list);
+      totMin += m; if (jb.rate > 0) { anyRate = true; totPay += m / 60 * jb.rate; }
+      return '<div class="prow" style="--jc:' + jc(jb) + '"><div class="who"><b><span class="dot"></span><span class="t">' + esc(jb.name) + '</span></b><small>' + rangeText(jb, key) + '</small></div><div class="h">' + fmtHM(m) + '</div><div class="p">' + (jb.rate > 0 ? money(m, jb.rate) : '–') + '</div></div>';
+    });
+    if (state.jobs.length > 1) rows.push('<div class="prow sum"><div class="who"><b>All jobs</b></div><div class="h">' + fmtHM(totMin) + '</div><div class="p">' + (anyRate ? state.cur + totPay.toFixed(2) : '–') + '</div></div>');
+    $('periods').innerHTML = rows.join('');
+    $('st-note').textContent = anyRate ? '' : 'Set an hourly rate for each job in the More tab to see pay.';
+    var rec = sorted(state.shifts).slice(-6).reverse();
+    $('recent-body').innerHTML = rec.length ? rec.map(function (s) { return rowHTML(s, true); }).join('') : '<tr><td colspan="5" class="empty">No shifts yet. Clock in, or add a past shift.</td></tr>';
+    tickClock();
+  }
+  function rowHTML(s, showJob) {
+    var jb = job(s.job);
+    return '<tr><td>' + dayLabel(s.date) + (showJob ? '<span class="jobname" style="--jc:' + jc(jb) + '"><span class="dot"></span>' + esc(jb.name) + '</span>' : '') + '</td><td>' + t12(s.in) + '</td><td>' + t12(s.out) +
+      (overnight(s) ? '<span class="overnight">next day</span>' : '') + '</td><td class="n">' + fmtHM(dur(s)) +
+      '</td><td class="n"><button class="edit" type="button" data-edit="' + s.id + '">Edit</button></td></tr>';
+  }
+
+  $('punch').addEventListener('click', function () {
+    if (!state.active) {
+      state.active = { start: Date.now(), job: state.sel }; save(); renderAll(); toast('Clocked in to ' + job(state.sel).name + ' at ' + t12(hhmm(new Date(state.active.start))));
+    } else {
+      var s = new Date(state.active.start), e = new Date(), jid = state.active.job;
+      var long = e.getTime() - s.getTime() >= 24 * 3600 * 1000;
+      state.shifts.push({ id: uid(), job: jid, date: dateKey(s), in: hhmm(s), out: hhmm(e) });
+      state.active = null; save(); renderAll();
+      toast(long ? 'Saved. This ran over 24 hours, so check the times.' : 'Clocked out. Shift saved.');
+    }
+  });
+  $('adj-save').addEventListener('click', function () {
+    var v = $('adj-time').value; if (!v || !state.active) return;
+    var now = new Date(), d = new Date();
+    d.setHours(+v.slice(0, 2), +v.slice(3), 0, 0);
+    if (d.getTime() > now.getTime()) d.setDate(d.getDate() - 1);
+    state.active.start = d.getTime(); save(); renderClock(); toast('Start time set to ' + t12(hhmm(d)));
+  });
+
+  /* ---------- timesheet view ---------- */
+  function renderSheet() {
+    var j = job(state.sel);
+    if (!viewPeriod[j.id]) viewPeriod[j.id] = curKey(j);
+    var key = viewPeriod[j.id];
+    $('m-label').textContent = monthLabel(key);
+    $('m-range').textContent = rangeText(j, key);
+    fillEnd(j, key);
+    var list = sorted(periodShifts(j, key));
+    var m = sum(list);
+    var html = list.map(function (s) { return rowHTML(s, false); }).join('');
+    if (list.length) html += '<tr class="total"><td colspan="3">Total, ' + list.length + (list.length === 1 ? ' shift' : ' shifts') + '</td><td class="n">' + fmtHM(m) + '</td><td></td></tr>';
+    else html = '<tr><td colspan="5" class="empty">No ' + esc(j.name) + ' shifts in this pay month.</td></tr>';
+    $('sheet-body').innerHTML = html;
+    $('sheet-pay').textContent = j.rate > 0 && list.length ? 'Pay: ' + money(m, j.rate) : '';
+    var groups = {};
+    jobShifts(j).forEach(function (s) { var k = periodKeyOf(j, s.date); (groups[k] = groups[k] || []).push(s); });
+    var keys = Object.keys(groups).sort().reverse();
+    $('all-title').textContent = 'All pay months, ' + j.name;
+    $('months').innerHTML = keys.length ? keys.map(function (k) {
+      var mm = sum(groups[k]);
+      return '<button type="button" data-month="' + k + '"><span>' + monthLabel(k) + '<small>' + rangeText(j, k) + '</small></span><span>' + fmtHM(mm) + '</span><span>' + (j.rate > 0 ? money(mm, j.rate) : '') + '</span></button>';
+    }).join('') : '<div class="empty">Pay months appear here once you log a shift.</div>';
+    var all = jobShifts(j), gt = sum(all);
+    $('grand').textContent = all.length ? 'Total for ' + j.name + ': ' + fmtHM(gt) + ' hours across ' + all.length + ' shifts' + (j.rate > 0 ? ', ' + money(gt, j.rate) : '') + '.' : '';
+  }
+  function fillEnd(j, key) {
+    var y = +key.slice(0, 4), m = +key.slice(5, 7), n = dim(y, m), custom = j.ends && j.ends[key];
+    var html = '<option value="">Usual day (' + Math.min(j.endDay, n) + ')</option>';
+    for (var d = 1; d <= n; d++) html += '<option value="' + d + '">' + d + '</option>';
+    $('m-end').innerHTML = html;
+    $('m-end').value = custom ? String(Math.min(custom, n)) : '';
+    $('m-endnote').textContent = custom ? 'Set by you for this month only. Other months keep the usual day.' : 'Change this if this month ran longer or shorter than usual. Shifts move to the right month on their own.';
+  }
+  $('m-end').addEventListener('change', function () {
+    var j = job(state.sel), key = viewPeriod[j.id], v = +$('m-end').value;
+    if (!j.ends) j.ends = {};
+    if (v) j.ends[key] = v; else delete j.ends[key];
+    save(); renderAll(); toast('Pay month updated');
+  });
+  $('m-prev').addEventListener('click', function () { var j = job(state.sel); viewPeriod[j.id] = shiftKey(viewPeriod[j.id], -1); renderSheet(); });
+  $('m-next').addEventListener('click', function () { var j = job(state.sel); viewPeriod[j.id] = shiftKey(viewPeriod[j.id], 1); renderSheet(); });
+  $('months').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-month]'); if (!b) return;
+    viewPeriod[state.sel] = b.getAttribute('data-month'); renderSheet(); window.scrollTo(0, 0);
+  });
+
+  /* ---------- job selects ---------- */
+  function fillJobSelect(el, withAll, keep) {
+    var cur = keep != null ? keep : el.value;
+    el.innerHTML = (withAll ? '<option value="">All jobs</option>' : '') + state.jobs.map(function (j) { return '<option value="' + j.id + '">' + esc(j.name || 'Untitled') + '</option>'; }).join('');
+    if ([].some.call(el.options, function (o) { return o.value === cur; })) el.value = cur;
+  }
+
+  /* ---------- editor ---------- */
+  var delArmed = false;
+  function openEditor(id) {
+    editingId = id; delArmed = false;
+    var s = id ? state.shifts.filter(function (x) { return x.id === id; })[0] : null;
+    fillJobSelect($('ed-job'), false, s ? s.job : state.sel);
+    $('ed-title').textContent = s ? 'Edit shift' : 'Add a shift';
+    $('ed-date').value = s ? s.date : dateKey(new Date());
+    $('ed-in').value = s ? s.in : '';
+    $('ed-out').value = s ? s.out : '';
+    $('ed-del').hidden = !s; $('ed-del').textContent = 'Delete'; $('ed-del').classList.remove('armed');
+    $('ed-msg').textContent = 'If Out is earlier than In, the shift runs past midnight.'; $('ed-msg').className = 'help';
+    edPreview(); $('scrim').hidden = false; $('ed-date').focus();
+  }
+  function closeEditor() { $('scrim').hidden = true; editingId = null; }
+  function edPreview() {
+    var a = $('ed-in').value, b = $('ed-out').value;
+    $('ed-prev').textContent = a && b ? fmtHM(dur({ in: a, out: b })) + ' hours' + (toMin(b) < toMin(a) ? ' (ends next day)' : '') : '';
+  }
+  ['ed-in', 'ed-out'].forEach(function (id) { $(id).addEventListener('input', edPreview); });
+  $('ed-cancel').addEventListener('click', closeEditor);
+  $('scrim').addEventListener('click', function (e) { if (e.target === $('scrim')) closeEditor(); });
+  $('ed-save').addEventListener('click', function () {
+    var d = $('ed-date').value, a = $('ed-in').value, b = $('ed-out').value, jid = $('ed-job').value;
+    if (!d || !a || !b) { $('ed-msg').textContent = 'Fill in the date, In and Out times.'; $('ed-msg').className = 'help err'; return; }
+    if (editingId) {
+      state.shifts.forEach(function (s) { if (s.id === editingId) { s.job = jid; s.date = d; s.in = a; s.out = b; } });
+    } else {
+      state.shifts.push({ id: uid(), job: jid, date: d, in: a, out: b });
+    }
+    state.sel = jid; viewPeriod[jid] = periodKeyOf(job(jid), d);
+    save(); closeEditor(); renderAll(); toast('Shift saved');
+  });
+  $('ed-del').addEventListener('click', function () {
+    if (!delArmed) { delArmed = true; $('ed-del').textContent = 'Tap again to delete'; $('ed-del').classList.add('armed'); return; }
+    state.shifts = state.shifts.filter(function (s) { return s.id !== editingId; });
+    save(); closeEditor(); renderAll(); toast('Shift deleted');
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('scrim').hidden) closeEditor(); });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-edit]'); if (b) openEditor(b.getAttribute('data-edit'));
+  });
+  $('recent-add').addEventListener('click', function () { openEditor(null); });
+  $('sheet-add').addEventListener('click', function () { openEditor(null); });
+
+  /* ---------- more: jobs ---------- */
+  function renderJobs() {
+    var endOpts = '';
+    for (var d = 1; d <= 28; d++) endOpts += '<option value="' + d + '">' + d + '</option>';
+    endOpts += '<option value="31">Last day of the month</option>';
+    $('jobs-list').innerHTML = state.jobs.map(function (j) {
+      var sw = '';
+      for (var c = 0; c < COLORS; c++) sw += '<button type="button" class="swatch" style="--jc:var(--j' + c + ')" data-color="' + c + '" aria-label="Colour ' + (c + 1) + '" aria-pressed="' + (j.color === c) + '"></button>';
+      return '<div class="jobcard" data-jid="' + j.id + '" style="--jc:' + jc(j) + '">' +
+        '<div class="row"><label class="f" for="jn-' + j.id + '">Job name<input type="text" id="jn-' + j.id + '" data-f="name" value="' + esc(j.name) + '" maxlength="40"></label>' +
+        '<label class="f" for="jr-' + j.id + '">Hourly rate<input type="number" id="jr-' + j.id + '" data-f="rate" inputmode="decimal" min="0" step="0.01" placeholder="0.00" value="' + (j.rate || '') + '"></label></div>' +
+        '<div class="row"><label class="f" for="je-' + j.id + '">Usual pay month end day<select id="je-' + j.id + '" data-f="endDay">' + endOpts.replace('value="' + j.endDay + '"', 'value="' + j.endDay + '" selected') + '</select></label></div>' +
+        '<div class="swatches" role="group" aria-label="Colour">' + sw + '</div>' +
+        '<div class="row between"><span class="help">' + jobShifts(j).length + ' shifts logged</span><button type="button" class="btn danger sm" data-del="' + j.id + '"' + (state.jobs.length < 2 ? ' disabled' : '') + '>Delete job</button></div>' +
+        '</div>';
+    }).join('');
+  }
+  var jobDelArmed = null;
+  $('jobs-list').addEventListener('input', function (e) {
+    var f = e.target.getAttribute('data-f'); if (!f) return;
+    var card = e.target.closest('[data-jid]'), j = job(card.getAttribute('data-jid'));
+    if (f === 'name') j.name = e.target.value.replace(/,/g, ' ');
+    if (f === 'rate') j.rate = Math.max(0, parseFloat(e.target.value) || 0);
+    if (f === 'endDay') { j.endDay = +e.target.value; delete viewPeriod[j.id]; }
+    save(); renderChips(); renderClock(); renderSheet(); buildExport(); refreshJobSelects();
+  });
+  $('jobs-list').addEventListener('click', function (e) {
+    var card = e.target.closest('[data-jid]'); if (!card) return;
+    var j = job(card.getAttribute('data-jid'));
+    var sw = e.target.closest('[data-color]');
+    if (sw) { j.color = +sw.getAttribute('data-color'); save(); renderAll(); renderJobs(); return; }
+    var del = e.target.closest('[data-del]');
+    if (del) {
+      if (jobDelArmed !== j.id) { jobDelArmed = j.id; del.textContent = 'Tap again: deletes ' + jobShifts(j).length + ' shifts'; del.classList.add('armed'); return; }
+      state.jobs = state.jobs.filter(function (x) { return x.id !== j.id; });
+      state.shifts = state.shifts.filter(function (s) { return s.job !== j.id; });
+      if (state.active && state.active.job === j.id) state.active = null;
+      if (state.sel === j.id) state.sel = state.jobs[0].id;
+      jobDelArmed = null; save(); renderAll(); toast('Job deleted');
+    }
+  });
+  $('job-add').addEventListener('click', function () {
+    var used = state.jobs.map(function (j) { return j.color; });
+    var col = 0; for (var c = 0; c < COLORS; c++) if (used.indexOf(c) < 0) { col = c; break; }
+    var j = newJob('Job ' + (state.jobs.length + 1), 0, 31, col);
+    state.jobs.push(j); state.sel = j.id; save(); renderAll(); toast('Job added. Name it and set the rate.');
+    var el = $('jn-' + j.id); if (el) { el.focus(); el.select(); }
+  });
+  $('cur').addEventListener('change', function () { state.cur = $('cur').value; save(); renderAll(); });
+
+  function refreshJobSelects() {
+    fillJobSelect($('x-job'), true); fillJobSelect($('imp-job'), false, state.sel);
+  }
+
+  /* ---------- more: export ---------- */
+  function buildExport() {
+    var from = $('x-from').value, to = $('x-to').value, jid = $('x-job').value;
+    var jobs = state.jobs.filter(function (j) { return !jid || j.id === jid; });
+    var pay = jobs.some(function (j) { return j.rate > 0; });
+    var lines = ['Job,Date,Day,In,Out,Hours,Decimal hours' + (pay ? ',Pay' : '')];
+    var gMin = 0, gPay = 0, gN = 0;
+    jobs.forEach(function (j) {
+      var list = sorted(jobShifts(j).filter(function (s) { return (!from || s.date >= from) && (!to || s.date <= to); }));
+      var groups = {};
+      list.forEach(function (s) { var k = periodKeyOf(j, s.date); (groups[k] = groups[k] || []).push(s); });
+      Object.keys(groups).sort().forEach(function (k) {
+        groups[k].forEach(function (s) {
+          var m = dur(s);
+          lines.push([j.name, s.date, keyToDate(s.date).toLocaleDateString('en-GB', { weekday: 'short' }), t12(s.in), t12(s.out), fmtHM(m), (m / 60).toFixed(2)].concat(pay ? [(m / 60 * j.rate).toFixed(2)] : []).join(','));
+        });
+        var mm = sum(groups[k]);
+        lines.push([j.name, 'TOTAL ' + monthLabel(k) + ' (' + rangeText(j, k) + ')', '', '', '', fmtHM(mm), (mm / 60).toFixed(2)].concat(pay ? [(mm / 60 * j.rate).toFixed(2)] : []).join(','));
+        gMin += mm; gPay += mm / 60 * j.rate; gN += groups[k].length;
+      });
+    });
+    if (gN) lines.push([jobs.length > 1 ? 'ALL JOBS' : jobs[0].name, 'GRAND TOTAL', '', '', '', fmtHM(gMin), (gMin / 60).toFixed(2)].concat(pay ? [gPay.toFixed(2)] : []).join(','));
+    $('x-out').value = gN ? lines.join('\n') : 'No shifts for this job and date range.';
+  }
+  ['x-job', 'x-from', 'x-to'].forEach(function (id) { $(id).addEventListener('change', buildExport); });
+  function setExportPeriod(delta) {
+    var jid = $('x-job').value, msg = $('x-msg');
+    if (!jid) { msg.textContent = 'Pick one job first. Each job has its own pay month.'; msg.className = 'help err'; return; }
+    var j = job(jid), key = shiftKey(curKey(j), delta), r = periodRange(j, key);
+    $('x-from').value = dateKey(r.start); $('x-to').value = dateKey(r.end);
+    msg.textContent = j.name + ': ' + monthLabel(key) + ', ' + rangeText(j, key) + '.'; msg.className = 'help';
+    buildExport();
+  }
+  $('x-this').addEventListener('click', function () { setExportPeriod(0); });
+  $('x-last').addEventListener('click', function () { setExportPeriod(-1); });
+  $('x-all').addEventListener('click', function () { $('x-from').value = ''; $('x-to').value = ''; buildExport(); });
+  function copyFrom(textarea, msgEl, okText) {
+    var text = textarea.value;
+    function fallback() { textarea.focus(); textarea.select(); msgEl.textContent = 'Selected. Press and hold, then choose Copy.'; msgEl.className = 'help'; }
+    try {
+      navigator.clipboard.writeText(text).then(function () { msgEl.textContent = okText; msgEl.className = 'help ok'; }, fallback);
+    } catch (e) { fallback(); }
+  }
+  $('x-copy').addEventListener('click', function () { copyFrom($('x-out'), $('x-msg'), 'Copied. Paste it into Excel or Google Sheets.'); });
+
+  /* ---------- more: import ---------- */
+  function to24(h, m, ap) {
+    h = +h; m = +m;
+    if (ap) { ap = ap.toUpperCase(); if (h === 12) h = 0; if (ap === 'PM') h += 12; }
+    if (h > 23 || m > 59) return null;
+    return pad(h) + ':' + pad(m);
+  }
+  function parseDate(txt) {
+    txt = txt.replace(/^[\s,;|\t-]+|[\s,;|\t-]+$/g, '').replace(/^[A-Za-z]+day,?\s*/i, '');
+    var m;
+    if ((m = txt.match(/(\d{4})-(\d{1,2})-(\d{1,2})/))) return m[1] + '-' + pad(+m[2]) + '-' + pad(+m[3]);
+    if ((m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/))) return m[3] + '-' + pad(+m[2]) + '-' + pad(+m[1]);
+    var t = Date.parse(txt);
+    if (!isNaN(t)) { var d = new Date(t); return dateKey(d); }
+    return null;
+  }
+  $('imp-go').addEventListener('click', function () {
+    var jid = $('imp-job').value || state.sel;
+    var lines = $('imp-in').value.split(/\r?\n/), added = 0, bad = [];
+    lines.forEach(function (line, i) {
+      if (!line.trim()) return;
+      var re = /(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp][Mm])?/g, times = [], mt;
+      var firstIdx = -1;
+      while ((mt = re.exec(line))) { if (firstIdx < 0) firstIdx = mt.index; times.push(to24(mt[1], mt[2], mt[3])); }
+      var d = firstIdx > 0 ? parseDate(line.slice(0, firstIdx)) : null;
+      if (times.length < 2 || !times[0] || !times[1] || !d) { bad.push(i + 1); return; }
+      state.shifts.push({ id: uid(), job: jid, date: d, in: times[0], out: times[1] }); added++;
+    });
+    if (added) { save(); renderAll(); }
+    var msg = $('imp-msg');
+    msg.textContent = (added ? 'Added ' + added + (added === 1 ? ' shift' : ' shifts') + ' to ' + job(jid).name + '.' : 'Nothing added.') + (bad.length ? ' Could not read line ' + bad.slice(0, 8).join(', ') + (bad.length > 8 ? '…' : '') + '.' : '');
+    msg.className = 'help ' + (bad.length ? 'err' : 'ok');
+    if (added && !bad.length) $('imp-in').value = '';
+  });
+
+  /* ---------- more: backup ---------- */
+  function buildBackup() { $('bk-out').value = JSON.stringify({ app: 'bakery-clock', v: 2, jobs: state.jobs, shifts: state.shifts, cur: state.cur }); }
+  $('bk-copy').addEventListener('click', function () { copyFrom($('bk-out'), $('bk-msg'), 'Backup copied. Keep it somewhere safe.'); });
+  var restoreArmed = false;
+  $('bk-restore').addEventListener('click', function () {
+    var msg = $('bk-rmsg'), data;
+    try { data = JSON.parse($('bk-in').value); } catch (e) { data = null; }
+    if (!data || data.app !== 'bakery-clock' || !Array.isArray(data.shifts)) { msg.textContent = 'That does not look like a Bakery Clock backup.'; msg.className = 'help err'; restoreArmed = false; return; }
+    if (!restoreArmed) { restoreArmed = true; msg.textContent = 'This replaces all current jobs and shifts. Tap Restore backup again to continue.'; msg.className = 'help err'; return; }
+    state = normalise({ jobs: data.jobs, shifts: data.shifts, rate: data.rate, cur: data.cur, active: null });
+    viewPeriod = {};
+    save(); restoreArmed = false; $('bk-in').value = ''; renderAll(); msg.textContent = 'Restored ' + state.shifts.length + ' shifts and ' + state.jobs.length + (state.jobs.length === 1 ? ' job.' : ' jobs.'); msg.className = 'help ok';
+  });
+  $('bk-in').addEventListener('input', function () { restoreArmed = false; $('bk-rmsg').textContent = ''; });
+
+  var wipeArmed = false;
+  $('wipe').addEventListener('click', function () {
+    if (!wipeArmed) { wipeArmed = true; $('wipe-msg').textContent = 'Tap Delete all shifts again to confirm.'; $('wipe-msg').className = 'help err'; return; }
+    state.shifts = []; state.active = null; save(); wipeArmed = false; renderAll();
+    $('wipe-msg').textContent = 'All shifts deleted.'; $('wipe-msg').className = 'help ok';
+  });
+
+  /* ---------- tabs ---------- */
+  function showView(v) {
+    ['clock', 'sheet', 'more'].forEach(function (n) {
+      $('view-' + n).hidden = n !== v;
+      $('tab-' + n).setAttribute('aria-selected', n === v ? 'true' : 'false');
+    });
+    if (v === 'more') renderMore();
+    if (v === 'sheet') renderSheet();
+    if (v === 'clock') renderClock();
+    wipeArmed = false; $('wipe-msg').textContent = '';
+  }
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () { showView(b.getAttribute('data-view')); });
+  });
+
+  function renderMore() {
+    $('cur').value = state.cur;
+    renderJobs(); refreshJobSelects();
+    if (!$('x-from').value && !$('x-to').value && state.shifts.length) {
+      var ds = state.shifts.map(function (s) { return s.date; }).sort();
+      $('x-from').value = ds[0]; $('x-to').value = ds[ds.length - 1];
+    }
+    buildExport(); buildBackup();
+  }
+  function renderAll() {
+    renderChips(); renderClock(); renderSheet();
+    if (!$('view-more').hidden) renderMore(); else buildBackup();
+  }
+
+  /* ---------- boot ---------- */
+  load();
+  try { localStorage.setItem(KEY + '-t', '1'); localStorage.removeItem(KEY + '-t'); } catch (e) { storageOk = false; }
+  $('storage-warning').hidden = storageOk;
+  renderAll();
+  setInterval(tickClock, 1000);
+})();
+</script>
+
+</body>
+</html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f1f3ef">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bakery Clock">
+<style>html{color-scheme:light}body{margin:0}[hidden]{display:none!important}</style>
+<title>Bakery Clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
 /* Layout: one narrow phone column. Big clock/punch button up top, then Timesheet and More as tabs. */
 :root {
   --bg: #f1f3ef;
